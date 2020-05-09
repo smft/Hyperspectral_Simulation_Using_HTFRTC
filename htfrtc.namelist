@@ -1,9 +1,9 @@
 &HTFRTC
-nc_name = '/scratch/users/qzhang/HWT3km/Single_DA/2020050303/wrfout_d01_2020-05-03_11:00:00',
+nc_name = '/scratch/users/qzhang/HWT3km/Single_DA/2020050809/wrfout_d01_2020-05-08_17:00:00',
 fname_coef = '/data/users/qzhang/source/rtcoef_rttov12/htfrtc/htfrtc_coef_static.nc',
 fname_sensor = '/data/users/qzhang/source/rtcoef_rttov12/htfrtc/htfrtc_coef_sensor_metop_iasi.nc',
 emis_path = '/data/users/qzhang/source/rtcoef_rttov12/emis_data',
-save_name = 'test.nc',
+save_name = 'ABI_CH07080914.nc',
 nlat = 1091,
 nlon = 1429,
 nlevels = 50,
@@ -12,5 +12,5 @@ sat_lat = 0.0,
 sat_lon = -72.5,
 month = 5,
 npcscores = 300,
-nchannels = 8461,
+nchannels = 10,
 /
