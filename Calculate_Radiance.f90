@@ -48,7 +48,7 @@ program test
   integer :: ncid,var_name_1_id,var_name_2_id,var_name_3_id,var_name_4_id,var_name_5_id,&
              var_name_6_id,var_name_7_id,var_name_8_id,var_name_9_id,var_name_10_id,&
              var_name_11_id,var_name_12_id,var_name_13_id,var_name_14_id,var_name_15_id,&
-             var_tbb_id,var_lat_id,var_lon_id
+             var_tbb_id,var_lat_id,var_lon_id,ncid_save
   real :: base_temperature,sat_lat,sat_lon,start_sec,end_sec
   real,dimension(:,:,:),allocatable :: pressure,p,pb,watervapor,theta,cloudfra,&
                                        temperature
@@ -311,35 +311,31 @@ else
                        emis_path)
   call cpu_time(end_sec)
   print '("HTFRTC Calculation on Rank ",i3,", Time Use = ",f8.3," seconds.")',rank,end_sec-start_sec
-  call MPI_SEND(tbb,cell_profiles*nchannels,MPI_REAL,0,rank,MPI_COMM_WORLD,ierr)
+  call MPI_SEND(tbb,cell_profiles*(nchannels+2),MPI_REAL,0,rank,MPI_COMM_WORLD,ierr)
 end if
 
 if (rank .eq. 0) then
   do i=1,(size-1)
     if (i .lt. (size-1)) then
       call MPI_RECV(tbb_all(1+cell_chunk*(i-1):i*cell_chunk,:),&
-                    cell_chunk*nchannels,MPI_REAL,&
+                    cell_chunk*(nchannels+2),MPI_REAL,&
                     i,i,MPI_COMM_WORLD,MPI_STATUS_IGNORE,ierr)
     else
       call MPI_RECV(tbb_all(1+cell_chunk*(i-1):,:),&
-                    (nlon*nlat-cell_chunk*(i-1))*nchannels,MPI_REAL,&
+                    (nlon*nlat-cell_chunk*(i-1))*(nchannels+2),MPI_REAL,&
                     i,i,MPI_COMM_WORLD,MPI_STATUS_IGNORE,ierr)
     end if
   end do
   !do i=i,nchannels
   !  write(*,*) sum(tbb_all(:,i))/(nlon*nlat)
   !end do
-  call cpu_time(start_sec)
-  call check(nf90_create(save_name,NF90_CLOBBER,ncid)) 
-  call check(nf90_def_dim(ncid,"nlocs",nlon*nlat,y_dimid))
-  call check(nf90_def_dim(ncid,"nchannels",nchannels+2,x_dimid))
-  dimids=(/y_dimid,x_dimid/)
-  call check(nf90_def_var(ncid,"IASI_TBB",NF90_DOUBLE,dimids,var_tbb_id))
-  call check(nf90_enddef(ncid))
-  call check(nf90_put_var(ncid,var_tbb_id,tbb_all))
-  call check(nf90_close(ncid))
-  call cpu_time(end_sec)
-  print '("Write NetCDF File, Time Use = ",f8.3,"seconds.")',end_sec-start_sec
+  call check(nf90_create(save_name,NF90_CLOBBER,ncid_save)) 
+  call check(nf90_def_dim(ncid_save,"nlocs",nlon*nlat,y_dimid))
+  call check(nf90_def_dim(ncid_save,"nchannels",nchannels+2,x_dimid))
+  call check(nf90_def_var(ncid_save,"Radiance_CH_07-08-09-14",NF90_DOUBLE,(/y_dimid,x_dimid/),var_tbb_id))
+  call check(nf90_enddef(ncid_save))
+  call check(nf90_put_var(ncid_save,var_tbb_id,tbb_all))
+  call check(nf90_close(ncid_save))
 end if
 
 contains
@@ -410,8 +406,10 @@ contains
     real,intent(in) :: temperature(profs,nlevels),pressure(profs,nlevels),watervapor(profs,nlevels)
     real,intent(in) :: t2(profs),q2(profs),psfc(profs),u10(profs),v10(profs),tsk(profs),height(profs),&
                        lat(profs),lon(profs),z_angle(profs),cloudtop(profs),cloudfra(profs)
-    real,dimension(:,:),allocatable :: transmistance
+    real,dimension(:,:),allocatable :: transmistance,srf
+    real,dimension(:),allocatable :: channel_info,radiance_total
 
+    integer :: iostatus
     integer(kind=jpim) :: iup ! unit for input profile file
     integer(kind=jpim) :: ioout,i
     integer(kind=jpim) :: nchannels_rec
@@ -452,9 +450,16 @@ contains
     end if
     nchannels_rec=coefs%coef_htfrtc%n_ch
     nchanprof=nchannels_rec
-    allocate(transmistance(profs,nchannels_rec+2))
+    allocate(channel_info(nchanprof))
+    channel_info=coefs%coef_htfrtc%sensor_freq
+    allocate(transmistance(profs,12))
     allocate(profiles(1),chanprof(nchanprof),calcemis(nchanprof),&
-              emissivity(nchanprof),stat=errorstatus)
+              emissivity(nchanprof),radiance_total(nchannels_rec))
+    open(16,file="/data/users/qzhang/TBB_Calculation/SRF/ABI/srf_iasi2abi.txt")
+    allocate(srf(10,nchannels_rec))
+    read(16,'(f9.5)',iostat=iostatus) srf
+    close(16)
+
     if(errorstatus/=errorstatus_success) then
       write(*,*) 'allocation error'
       call rttov_exit(errorstatus)
@@ -517,9 +522,23 @@ contains
                         calcemis=calcemis,emissivity=emissivity,pccomp=pccomp)
       lo=1
       hi=nchannels_rec
-      transmistance(i,lo:hi)=pccomp%bt_pccomp(lo:hi)
-      transmistance(i,hi+1)=lat(i)
-      transmistance(i,hi+2)=lon(i)
+      !transmistance(i,lo:hi)=pccomp%bt_pccomp(lo:hi)
+      !radiance_total(i,lo:hi)=pccomp%total_pccomp(lo:hi)
+      !radiance_clear(i,lo:hi)=pccomp%clear_pccomp(lo:hi)
+      !radiance_cloudy(i,lo:hi)=pccomp%cloudy_pccomp(lo:hi)
+      radiance_total(:)=pccomp%total_pccomp(lo:hi)
+      transmistance(i,12)=lat(i)
+      transmistance(i,11)=lon(i)
+      transmistance(i,1)=sum(radiance_total*srf(1,:))/sum(srf(1,:))
+      transmistance(i,2)=sum(radiance_total*srf(2,:))/sum(srf(2,:))
+      transmistance(i,3)=sum(radiance_total*srf(3,:))/sum(srf(3,:))
+      transmistance(i,4)=sum(radiance_total*srf(4,:))/sum(srf(4,:))
+      transmistance(i,5)=sum(radiance_total*srf(5,:))/sum(srf(5,:))
+      transmistance(i,6)=sum(radiance_total*srf(6,:))/sum(srf(6,:))
+      transmistance(i,7)=sum(radiance_total*srf(7,:))/sum(srf(7,:))
+      transmistance(i,8)=sum(radiance_total*srf(8,:))/sum(srf(8,:))
+      transmistance(i,9)=sum(radiance_total*srf(9,:))/sum(srf(9,:))
+      transmistance(i,10)=sum(radiance_total*srf(10,:))/sum(srf(10,:))
     end do
     call rttov_dealloc_coefs(errorstatus,coefs)
     deallocate(profiles,chanprof,calcemis,emissivity)
