@@ -409,7 +409,7 @@ contains
     real,dimension(:,:),allocatable :: transmistance,srf
     real,dimension(:),allocatable :: channel_info,radiance_total
 
-    integer :: iostatus
+    integer :: iostatus,counts
     integer(kind=jpim) :: iup ! unit for input profile file
     integer(kind=jpim) :: ioout,i
     integer(kind=jpim) :: nchannels_rec
@@ -457,7 +457,10 @@ contains
               emissivity(nchanprof),radiance_total(nchannels_rec))
     open(16,file="/data/users/qzhang/TBB_Calculation/SRF/ABI/srf_iasi2abi.txt")
     allocate(srf(10,nchannels_rec))
-    read(16,'(f9.5)',iostat=iostatus) srf
+    do counts=1,10
+      read(16,'(8461F9.5)') srf(counts,:)
+      write(*,*) minval(srf(counts,:)),maxval(srf(counts,:)),sum(srf(counts,:))
+    end do
     close(16)
 
     if(errorstatus/=errorstatus_success) then
